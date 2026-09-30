@@ -9,3 +9,7 @@ dist/
 build/
 *.log
 node_modules/
+*.db
+.venv/
+venv/
+*.spec
