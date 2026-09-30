@@ -24,7 +24,14 @@ class Printer:
     name: str = ""
     electricity_kwh_per_hour: float = 0.0     # кВт*ч
     depreciation_rub_per_hour: float = 0.0    # руб./час
+    bed_x_mm: float = 300.0                   # размер печатной платформы, мм (этап 2)
+    bed_y_mm: float = 300.0
+    bed_z_mm: float = 300.0                   # высота (Z) — справочно
     note: str = ""
+
+    @property
+    def bed_size_str(self) -> str:
+        return f"{self.bed_x_mm:g} × {self.bed_y_mm:g} × {self.bed_z_mm:g} мм"
 
     def to_row(self) -> dict:
         return asdict(self)
@@ -101,3 +108,31 @@ class Settings:
     electricity_price_rub_per_kwh: float = 5.0   # тариф за электроэнергию
     labor_rate_rub_per_hour: float = 0.0         # (зарезервировано) стоимость часа работы оператора
     markup_percent: float = 0.0                  # (зарезервировано) наценка
+    work_start: str = "07:30"                    # начало рабочего окна (этап 2)
+    work_end: str = "16:15"                      # конец рабочего окна; ночь — остальное время
+    pack_gap_mm: float = 1.0                     # зазор между деталями на платформе
+
+
+@dataclass
+class PartItem:
+    """Позиция деталей для планирования печати (этап 2, вкладка 'Планировщик').
+
+    shape: rect -- прямоугольный габарит (x,y); circle -- круглый (диаметр в x).
+    time_h -- время печати ОДНОЙ детали из слайсера; qty -- количество таких деталей.
+    """
+
+    SHAPE_RECT = "rect"
+    SHAPE_CIRCLE = "circle"
+    SHAPE_LABELS = {SHAPE_RECT: "Прямоугольная", SHAPE_CIRCLE: "Круглая"}
+
+    id: int | None = None
+    name: str = ""
+    shape: str = SHAPE_RECT
+    size_x_mm: float = 0.0     # ширина / диаметр, мм
+    size_y_mm: float = 0.0     # глубина, мм (для круга = диаметру)
+    time_h: float = 0.0        # часов на одну деталь
+    qty: int = 1
+    note: str = ""
+
+    def to_row(self) -> dict:
+        return asdict(self)
