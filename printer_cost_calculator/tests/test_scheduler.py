@@ -29,13 +29,22 @@ class TimeTests(unittest.TestCase):
 
 class PackTests(unittest.TestCase):
     def test_rect_fit_with_gap(self):
-        reqs = [PackRequest("Корпус", "rect", 100, 100, 9)]
+        reqs = [PackRequest("Корпус", "rect", 100, 100, 8)]
         res = pack_bed(reqs, 300, 300, gap_mm=1)
-        self.assertEqual(len(res.placed), 9)   # 3 ряда по 3
+        # габарит с зазором 101 мм: по X влезает floor(300/101)=2 ряда-колонки
+        self.assertEqual(len(res.placed), 8)
         self.assertEqual(res.unplaced, [])
         for p in res.placed:                   # ничего не вылезает за стол
             self.assertLessEqual(p.x_mm + p.w_mm, 300 + 1e-6)
             self.assertLessEqual(p.y_mm + p.h_mm, 300 + 1e-6)
+
+    def test_gap_consumes_capacity(self):
+        # без зазора на стол 300 влезает ровно 9 деталей 100×100,
+        # с зазором 1 мм — только 8 (это ожидаемое поведение, см. тест выше)
+        reqs = [PackRequest("Корпус", "rect", 100, 100, 9)]
+        res = pack_bed(reqs, 300, 300, gap_mm=0)
+        self.assertEqual(len(res.placed), 9)
+        self.assertEqual(res.unplaced, [])
 
     def test_no_overlap_gap_respected(self):
         reqs = [PackRequest("A", "rect", 50, 40, 4)]

@@ -245,10 +245,13 @@ class PlannerTab(QWidget):
         splitter.addWidget(host_r)
 
         splitter.setSizes([260, 460, 300])
-        root.addWidget(QLabel(
+        lbl_rule = QLabel(
             "Правило: длинные/крупные детали уходят в ночное окно (их не нужно "
             "снимать сразу), короткие — в дневное. Ночное окно рассчитывается "
-            "автоматически: 24 ч минус ваше рабочее время."), role="muted")
+            "автоматически: 24 ч минус ваше рабочее время.")
+        lbl_rule.setProperty("role", "muted")
+        lbl_rule.setWordWrap(True)
+        root.addWidget(lbl_rule)
 
         self.reload_sources()
         self._update_night_label()

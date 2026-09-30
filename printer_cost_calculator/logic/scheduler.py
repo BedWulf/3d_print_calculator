@@ -112,10 +112,13 @@ def pack_bed(requests: list[PackRequest], bed_x: float, bed_y: float,
     placed_idx: dict[str, int] = {}
 
     def try_shelf(sh, w, h):
-        """Положить деталь в ряд; при allow_rotation — и повёрнутой. Возвращает (w,h) или None."""
+        """Положить деталь в ряд; при allow_rotation — и повёрнутой. Возвращает (w,h) или None.
+
+        В ряду детали стоят на его «полу», поэтому по высоте проверяется
+        только габарит детали (не курсор ряда)."""
         variants = [(w, h)] + ([(h, w)] if allow_rotation and abs(w - h) > 1e-9 else [])
         for pw, ph in variants:
-            if sh["x"] + pw <= bed_x + 1e-9 and ph <= sh["h"] + 1e-9:
+            if sh["x"] + pw <= bed_x + 1e-9 and ph <= bed_y - sh["y"] + 1e-9:
                 return pw, ph
         return None
 
@@ -127,6 +130,15 @@ def pack_bed(requests: list[PackRequest], bed_x: float, bed_y: float,
             return True
         return False
 
+    def can_place_anywhere(w, h):
+        """Есть ли шанс разместить деталь: в любой существующий ряд или новым рядом."""
+        for sh in shelves:
+            if try_shelf(sh, w, h):
+                return True
+        top = max((sh["y"] + sh["h"] for sh in shelves), default=0.0)
+        variants = [(w, h)] + ([(h, w)] if allow_rotation and abs(w - h) > 1e-9 else [])
+        return any(vw <= bed_x + 1e-9 and top + vh <= bed_y + 1e-9 for vw, vh in variants)
+
     def place_one(name, shape, x, y, pw, ph):
         k = placed_idx.get(name, 0) + 1
         placed_idx[name] = k
@@ -136,35 +148,35 @@ def pack_bed(requests: list[PackRequest], bed_x: float, bed_y: float,
 
     def fill_rows():
         """Один проход по рядам: курсор движется только вперёд (без отката),
-        поэтому раскладка детерминирована и не зацикливается."""
+        поэтому раскладка детерминирована и не зацикливается.
+
+        Деталь кладётся в первый ряд, где для неё хватает места по ширине —
+        так ряды заполняются целиком, а высокие детали создают новые ряды."""
         changed_any = False
         for sh in shelves:
-            while True:
-                # среди оставшихся выбираем максимально высокую деталь,
-                # помещающуюся в высоту ряда (классический shelf-fill)
+            while len(res.placed) < max_items:
                 best_key, best_fit = None, None
                 for key, cnt in remaining.items():
                     if cnt <= 0:
                         continue
                     name, shape, w, h = key
                     fit = try_shelf(sh, w, h)
-                    if fit and (best_fit is None or fit[1] > best_fit[1]):
+                    if fit:
                         best_key, best_fit = key, fit
+                        break  # первая же влезающая деталь идёт в текущий ряд
                 if best_key is None:
                     break
                 name, shape, _w, _h = best_key
                 pw, ph = best_fit
                 place_one(name, shape, sh["x"], sh["y"], pw, ph)
                 sh["x"] += pw
+                sh["h"] = max(sh["h"], ph)
                 remaining[best_key] -= 1
                 changed_any = True
         return changed_any
 
     progress = True
-    while any(c > 0 for c in remaining.values()) and progress:
-        progress = fill_rows()
-        if not any(c > 0 for c in remaining.values()):
-            break
+    while any(c > 0 for c in remaining.values()) and len(res.placed) < max_items and progress:
         # создаём новый ряд из самой крупной оставшейся детали, которая влезает
         candidates = [(k, c) for k, c in remaining.items() if c > 0]
         candidates.sort(key=lambda kc: (-kc[0][2] * kc[0][3], kc[0][0]))
@@ -179,6 +191,9 @@ def pack_bed(requests: list[PackRequest], bed_x: float, bed_y: float,
                 break
         if not made_row:
             break  # стол заполнен
+        progress = fill_rows()
+        if not any(c > 0 for c in remaining.values()):
+            break
 
     for (name, _shape, _w, _h), cnt in remaining.items():
         if cnt > 0:
