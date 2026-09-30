@@ -107,14 +107,17 @@ def calculate(inp: CalcInput) -> CalcResult:
         ))
 
     # --- 5. Расходные материалы ----------------------------------------------------
+    # consumption_per_part -- доля расхода на одну деталь (например, сопло
+    # служит 200 ч печати: за деталь 6 ч расходуется 6/200 ресурса),
+    # price_rub -- цена за целую единицу (упаковку).
     for c in inp.selected_consumables:
-        cost = c.consumption_per_part  # норма уже задана на одну деталь
+        cost = c.consumption_per_part * c.price_rub
         res.steps.append(CalcStep(
             title=f"Расходный материал: {c.name}",
-            formula=(f"{_fmt(c.consumption_per_part)} {c.unit}/деталь"
-                     f" × {_fmt(c.price_rub / max(c.consumption_per_part, 1e-9))} ₽/{c.unit}"
-                     if c.consumption_per_part > 0 else "0"),
+            formula=(f"{_fmt(c.consumption_per_part)} {c.unit} × {_fmt(c.price_rub)} ₽/{c.unit}"
+                     f" (за целую единицу)"),
             value_rub=cost,
+            comment=c.note,
         ))
 
     # --- Итоги ---------------------------------------------------------------------

@@ -12,7 +12,8 @@ from printer_cost_calculator.logic.calculator import CalcInput, calculate
 class RepoCRUDTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        self.repo = Repository(self.tmp.name)
+        # seed_defaults=False -- тестируем чистый CRUD без стартовых данных
+        self.repo = Repository(self.tmp.name, seed_defaults=False)
 
     def tearDown(self):
         self.repo.close()
@@ -38,15 +39,43 @@ class RepoCRUDTests(unittest.TestCase):
         self.repo.update_material(m)
         self.assertAlmostEqual(self.repo.list_materials()[0].price_per_gram, 2.0)
 
+
+class RepoSeedTests(unittest.TestCase):
+    """Проверяем, что при первом запуске БД заполняется стартовыми данными
+    (PetG черный 1800 руб/кг, Raise3D Pro3, Anycubic Kobra S1, расходники)."""
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.repo = Repository(self.tmp.name)  # seed_defaults=True по умолчанию
+
+    def tearDown(self):
+        self.repo.close()
+        Path(self.tmp.name).unlink(missing_ok=True)
+
     def test_consumable_and_settings(self):
+        self.assertTrue(any(p.name == "PetG черный" for p in self.repo.list_materials()))
+        self.assertTrue(any("Raise3D Pro3" in p.name for p in self.repo.list_printers()))
+        self.assertTrue(any("Kobra S1" in p.name for p in self.repo.list_printers()))
+        self.assertTrue(len(self.repo.list_consumables()) >= 4)
         self.repo.add_consumable(Consumable(kind=Consumable.KIND_GLUE, name="Клей-карандаш",
                                             unit="шт.", consumption_per_part=0.05, price_rub=60))
-        c = self.repo.list_consumables()[0]
-        self.assertEqual(c.kind, "glue")
+        glue = [c for c in self.repo.list_consumables() if c.name == "Клей-карандаш"][0]
+        self.assertEqual(glue.kind, "glue")
         s = self.repo.get_settings()
         s.electricity_price_rub_per_kwh = 7.5
         self.repo.save_settings(s)
         self.assertEqual(self.repo.get_settings().electricity_price_rub_per_kwh, 7.5)
+
+    def test_petg_price_per_gram(self):
+        petg = [m for m in self.repo.list_materials() if m.name == "PetG черный"][0]
+        self.assertAlmostEqual(petg.price_per_gram, 1.8)  # 1800 руб / 1000 г
+
+    def test_seed_only_when_empty(self):
+        # повторное открытие той же базы не дублирует записи
+        names_before = [p.name for p in self.repo.list_printers()]
+        self.repo.close()
+        self.repo = Repository(self.tmp.name)
+        self.assertEqual([p.name for p in self.repo.list_printers()], names_before)
 
 
 class CalculatorTests(unittest.TestCase):
@@ -56,7 +85,7 @@ class CalculatorTests(unittest.TestCase):
         self.pla = Material(id=1, name="PLA", spool_weight_kg=1.0, price_rub=1000)   # 1 ₽/г
         self.petg = Material(id=2, name="PETG", spool_weight_kg=0.5, price_rub=700)  # 1.4 ₽/г
         self.napkin = Consumable(id=1, kind="napkin", name="Салфетки",
-                                 unit="шт.", consumption_per_part=2, price_rub=5)
+                                 unit="шт.", consumption_per_part=0.2, price_rub=10)  # 2 ₽/деталь
         self.settings = Settings(electricity_price_rub_per_kwh=5)
 
     def _input(self, **kw):

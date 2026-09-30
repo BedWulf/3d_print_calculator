@@ -48,12 +48,81 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 
+def default_printers() -> list[Printer]:
+    """Стартовые принтеры. Данные -- по открытым источникам/официальным сайтам
+    (Raise3D: raise3d.com; Anycubic: anycubic.com), округлены. Все параметры
+    можно изменить на вкладке 'Принтеры'."""
+    return [
+        Printer(
+            name="Raise3D Pro3 (FFF)",
+            electricity_kwh_per_hour=0.35,   # нагрев ~260C/стол ~100C, среднее за печать
+            depreciation_rub_per_hour=17.4,  # ~195000 руб / 15000 ч ресурса (≈2 года 24/7)
+            note="Цена ~195 000 руб (RFQ у дилеров). Ресурс до амортизации: 15 000 ч — правьте под себя.",
+        ),
+        Printer(
+            name="Anycubic Kobra S1",
+            electricity_kwh_per_hour=0.2,    # макс. мощность ~600 Вт, среднее при печати ~200 Вт
+            depreciation_rub_per_hour=3.0,   # ~36 000 руб / 12 000 ч
+            note="Цена ~36 000 руб (розница РФ). Ресурс 12 000 ч — правьте под себя.",
+        ),
+    ]
+
+
+def default_materials() -> list[Material]:
+    return [
+        Material(
+            name="PetG черный",
+            density_g_cm3=1.27,       # типичная плотность PETG ~1.27 г/см3
+            spool_weight_kg=1.0,
+            price_rub=1800.0,         # задано пользователем
+            note="1800 руб/кг — как указал пользователь. Цена грамма считается автоматически.",
+        ),
+    ]
+
+
+def default_consumables() -> list[Consumable]:
+    """Расходники: consumption_per_part -- доля расхода НА ОДНУ деталь,
+    price_rub -- цена за целую единицу/упаковку. Значения типовые, правятся
+    на вкладке 'Расходные материалы'."""
+    return [
+        Consumable(kind=Consumable.KIND_NAPKIN, name="Салфетки безворсовые (уборка стола)",
+                   unit="шт.", consumption_per_part=0.05, price_rub=15.0,
+                   note="~1 салфетка на 20 деталей"),
+        Consumable(kind=Consumable.KIND_LUBRICANT, name="Смазка для принтера (PTFE/литиевая)",
+                   unit="мл", consumption_per_part=0.01, price_rub=350.0,
+                   note="Туба ~30 мл на ~3000 деталей — доля на деталь 1/3000*30=0.01 мл")
+        ,
+        Consumable(kind=Consumable.KIND_NOZZLE, name="Сопло 0.4 мм латунное",
+                   unit="ч", consumption_per_part=0.005, price_rub=200.0,
+                   note="Ресурс сопла ~200 ч; за деталь 1 ч расходуется 1/200 = 0.005 ресурса")
+        ,
+        Consumable(kind=Consumable.KIND_GLUE, name="Клей-стик для стола (PVP)",
+                   unit="г", consumption_per_part=0.02, price_rub=250.0,
+                   note="Стик ~50 г примерно на 10 сессий — корректируйте под расход"),
+    ]
+
+
 class Repository:
-    def __init__(self, db_path: str | Path = DEFAULT_DB_PATH):
+    def __init__(self, db_path: str | Path = DEFAULT_DB_PATH, seed_defaults: bool = True):
         self.conn = sqlite3.connect(str(db_path))
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(_SCHEMA)
         self.conn.commit()
+        if seed_defaults:
+            self._seed_defaults()
+
+    def _seed_defaults(self) -> None:
+        """Заполняет БД стартовыми данными, только если соответствующие
+        таблицы пусты. После этого всё редактируется через вкладки приложения."""
+        if self.conn.execute("SELECT COUNT(*) FROM printers").fetchone()[0] == 0:
+            for p in default_printers():
+                self.add_printer(p)
+        if self.conn.execute("SELECT COUNT(*) FROM materials").fetchone()[0] == 0:
+            for m in default_materials():
+                self.add_material(m)
+        if self.conn.execute("SELECT COUNT(*) FROM consumables").fetchone()[0] == 0:
+            for c in default_consumables():
+                self.add_consumable(c)
 
     # ------------------------------------------------------------------ printers
     def list_printers(self) -> list[Printer]:
