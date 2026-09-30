@@ -57,23 +57,45 @@ class CalculatorTab(QWidget):
         bl.addLayout(gl)
         form.addRow(box)
 
-        lay.addLayout(form)
-
         calc_btn = QPushButton("РАССЧИТАТЬ")
         calc_btn.setObjectName("default")
         calc_btn.clicked.connect(self._on_calc)
-        lay.addWidget(calc_btn)
 
         # ----------------------------- результат --------------------------------
+        # Ход расчёта занимает большую часть окна: помещаются ВСЕ строки сразу,
+        # листать формулы не нужно. Форма ввода — слева, прокручивается только она.
+        split = QHBoxLayout()
+
+        form_wrap = QVBoxLayout()
+        form_wrap.addLayout(form)
+        form_wrap.addWidget(calc_btn)
+        form_wrap.addStretch(1)
+        form_host = QWidget()
+        form_host.setLayout(form_wrap)
+        from PyQt5.QtWidgets import QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(form_host)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setMaximumWidth(430)
+        split.addWidget(scroll, 0)
+
+        res_box = QVBoxLayout()
         head = QLabel("Ход расчёта:")
         head.setProperty("role", "accent")
-        lay.addWidget(head)
+        res_box.addWidget(head)
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Статья", "Формула", "Сумма, ₽"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        lay.addWidget(self.table)
+        self.table.setSizePolicy(self.table.sizePolicy().Expanding,
+                                 self.table.sizePolicy().Expanding)
+        self.table.setMinimumHeight(420)   # ~12+ строк без прокрутки
+        res_box.addWidget(self.table, 1)
+        split.addLayout(res_box, 1)
+
+        lay.addLayout(split, 1)
 
         tot = QHBoxLayout()
         self.l_per_part = QLabel("Цена за деталь: —")

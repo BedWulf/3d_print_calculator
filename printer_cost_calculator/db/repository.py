@@ -117,17 +117,12 @@ def default_consumables() -> list[Consumable]:
 
 
 class Repository:
-    def __init__(self, db_path: str | Path = DEFAULT_DB_PATH, seed_defaults: bool = True):
-        self.conn = sqlite3.connect(str(db_path))
-        self.conn.row_factory = sqlite3.Row
-        self._migrate()
-        self.conn.executescript(_SCHEMA)
-        self.conn.commit()
-        if seed_defaults:
-            self._seed_defaults()
-
     def _migrate(self) -> None:
         """Бережно добавляет колонки, появившиеся в новых версиях приложения."""
+        tables = {r["name"] for r in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "printers" not in tables:
+            return  # новая база — схема создаётся в __init__ после миграции
         cols = {r["name"] for r in
                 self.conn.execute("PRAGMA table_info(printers)").fetchall()}
         for col, decl in (("bed_x_mm", "REAL NOT NULL DEFAULT 300"),
@@ -136,6 +131,15 @@ class Repository:
             if col not in cols:
                 self.conn.execute(f"ALTER TABLE printers ADD COLUMN {col} {decl}")
         self.conn.commit()
+
+    def __init__(self, db_path: str | Path = DEFAULT_DB_PATH, seed_defaults: bool = True):
+        self.conn = sqlite3.connect(str(db_path))
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(_SCHEMA)   # сначала схема (создаёт таблицы)
+        self._migrate()                     # потом догоняем недостающие колонки
+        self.conn.commit()
+        if seed_defaults:
+            self._seed_defaults()
 
     def _seed_defaults(self) -> None:
         """Заполняет БД стартовыми данными, только если соответствующие

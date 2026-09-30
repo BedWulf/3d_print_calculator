@@ -120,8 +120,8 @@ def pack_bed(requests: list[PackRequest], bed_x: float, bed_y: float,
         return None
 
     def add_row(w, h):
-        """Новый ряд над текущим верхним краем стола; False если не влезает."""
-        top = (shelves[-1]["y"] + shelves[-1]["h"]) if shelves else 0.0
+        """Новый ряд над текущим верхним краем занятых рядов; False если не влезает."""
+        top = max((sh["y"] + sh["h"] for sh in shelves), default=0.0)
         if w <= bed_x + 1e-9 and top + h <= bed_y + 1e-9:
             shelves.append({"y": top, "x": 0.0, "h": h})
             return True
@@ -135,24 +135,29 @@ def pack_bed(requests: list[PackRequest], bed_x: float, bed_y: float,
     remaining = Counter(counts)
 
     def fill_rows():
-        """Раскладываем остатки по всем рядам, пока появляется прогресс."""
+        """Один проход по рядам: курсор движется только вперёд (без отката),
+        поэтому раскладка детерминирована и не зацикливается."""
         changed_any = False
-        changed = True
-        while changed:
-            changed = False
-            for sh in shelves:
-                for key, cnt in list(remaining.items()):
+        for sh in shelves:
+            while True:
+                # среди оставшихся выбираем максимально высокую деталь,
+                # помещающуюся в высоту ряда (классический shelf-fill)
+                best_key, best_fit = None, None
+                for key, cnt in remaining.items():
                     if cnt <= 0:
                         continue
                     name, shape, w, h = key
                     fit = try_shelf(sh, w, h)
-                    if fit:
-                        pw, ph = fit
-                        place_one(name, shape, sh["x"], sh["y"], pw, ph)
-                        sh["x"] += pw
-                        remaining[key] -= 1
-                        changed = True
-                        changed_any = True
+                    if fit and (best_fit is None or fit[1] > best_fit[1]):
+                        best_key, best_fit = key, fit
+                if best_key is None:
+                    break
+                name, shape, _w, _h = best_key
+                pw, ph = best_fit
+                place_one(name, shape, sh["x"], sh["y"], pw, ph)
+                sh["x"] += pw
+                remaining[best_key] -= 1
+                changed_any = True
         return changed_any
 
     progress = True

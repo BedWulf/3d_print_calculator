@@ -43,6 +43,13 @@ class PrintersTab(QWidget):
         self.e_name = QLineEdit();      form.addRow("Название:", self.e_name)
         self.e_kwh = QLineEdit();       form.addRow("Потребление, кВт·ч/час:", self.e_kwh)
         self.e_dep = QLineEdit();       form.addRow("Амортизация, ₽/час:", self.e_dep)
+        bed_row = QHBoxLayout()
+        self.e_bed_x = QLineEdit(); self.e_bed_y = QLineEdit(); self.e_bed_z = QLineEdit()
+        for w in (self.e_bed_x, self.e_bed_y, self.e_bed_z):
+            w.setMaximumWidth(90); bed_row.addWidget(w)
+        bed_row.addWidget(QLabel("(X × Y × Z, мм)"))
+        bed_row.addStretch(1)
+        form.addRow("Размер платформы:", bed_row)
         self.e_note = QLineEdit();      form.addRow("Примечание:", self.e_note)
         save = QPushButton("Сохранить"); save.setObjectName("default")
         save.clicked.connect(self._save)
@@ -65,6 +72,9 @@ class PrintersTab(QWidget):
         self.e_name.setText(p.name)
         self.e_kwh.setText(str(p.electricity_kwh_per_hour))
         self.e_dep.setText(str(p.depreciation_rub_per_hour))
+        self.e_bed_x.setText(str(p.bed_x_mm))
+        self.e_bed_y.setText(str(p.bed_y_mm))
+        self.e_bed_z.setText(str(p.bed_z_mm))
         self.e_note.setText(p.note)
 
     def _add(self):
@@ -88,6 +98,9 @@ class PrintersTab(QWidget):
         p.name = self.e_name.text().strip() or p.name
         p.electricity_kwh_per_hour = _f(self.e_kwh)
         p.depreciation_rub_per_hour = _f(self.e_dep)
+        p.bed_x_mm = _f(self.e_bed_x, p.bed_x_mm)
+        p.bed_y_mm = _f(self.e_bed_y, p.bed_y_mm)
+        p.bed_z_mm = _f(self.e_bed_z, p.bed_z_mm)
         p.note = self.e_note.text().strip()
         self.repo.update_printer(p)
         self.listw.reload(select=p.name)
