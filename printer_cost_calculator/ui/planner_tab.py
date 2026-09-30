@@ -14,12 +14,13 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QRectF
+from PyQt5.QtCore import Qt, QRectF, QSize, QEvent, QPointF
 from PyQt5.QtGui import QColor, QPainter, QPen, QFont
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QComboBox, QLineEdit, QGroupBox,
     QSplitter, QMessageBox, QAbstractItemView, QSizePolicy, QScrollArea,
+    QStyledItemDelegate, QStyle,
 )
 
 from ..db.models import PartItem, Consumable
@@ -31,6 +32,50 @@ from . import theme
 
 
 # ------------------------------------------------------------------ вид стола --
+BTN_ROLE = Qt.UserRole + 10          # id позиции для кнопки «➕» в строке списка
+
+
+class PositionDelegate(QStyledItemDelegate):
+    """Рисует в конце каждой строки списка маленькую кнопку «➕» — добавить на стол."""
+
+    BTN_SIZE = 24
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        pid = index.data(BTN_ROLE)
+        if pid is None:
+            return
+        r = option.rect
+        br = QRectF(r.right() - self.BTN_SIZE - 6, r.center().y() - self.BTN_SIZE / 2,
+                    self.BTN_SIZE, self.BTN_SIZE)
+        hovered = bool(option.state & QStyle.State_MouseOver)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor(theme.GOLD_DIM), 1))
+        painter.setBrush(QColor(theme.HOVER if hovered else theme.SURFACE_2))
+        painter.drawRoundedRect(br, 5, 5)
+        pen = QPen(QColor(theme.GOLD))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        cx, cy = br.center().x(), br.center().y()
+        half = self.BTN_SIZE * 0.24
+        painter.drawLine(QRectF(cx - half, cy - 0.5, half * 2, 1.0).topLeft(),
+                         QRectF(cx - half, cy - 0.5, half * 2, 1.0).bottomRight())
+        painter.drawLine(QRectF(cx - 0.5, cy - half, 1.0, half * 2).topLeft(),
+                         QRectF(cx - 0.5, cy - half, 1.0, half * 2).bottomRight())
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        s = super().sizeHint(option, index)
+        return QSize(s.width(), max(s.height(), self.BTN_SIZE + 10))
+
+
+def btn_rect_for(item_rect: QRectF) -> QRectF:
+    size = PositionDelegate.BTN_SIZE
+    return QRectF(item_rect.right() - size - 6,
+                  item_rect.center().y() - size / 2, size, size)
+
+
 class BedView(QWidget):
     """Визуализация печатной платформы сверху вниз (только X/Y)."""
 
@@ -72,16 +117,18 @@ class BedView(QWidget):
         p.setBrush(QColor(theme.SURFACE))
         p.drawRect(table_rect)
 
-        # сетка каждые 50 мм
+        # сетка каждые 50 мм (QPainter.drawLine принимает точки, не QRectF)
         p.setPen(QPen(QColor(theme.BORDER), 0.5, Qt.DotLine))
         step = 50.0
         gx = step
         while gx < self.bed_x:
-            p.drawLine(QRectF(ox + gx * scale, oy, 0.5, self.bed_y * scale))
+            x = ox + gx * scale
+            p.drawLine(int(x), int(oy), int(x), int(oy + self.bed_y * scale))
             gx += step
         gy = step
         while gy < self.bed_y:
-            p.drawLine(QRectF(ox, oy + gy * scale, self.bed_x * scale, 0.5))
+            y = oy + gy * scale
+            p.drawLine(int(ox), int(y), int(ox + self.bed_x * scale), int(y))
             gy += step
 
         # детали (Y инвертируем: нули координат — в левом нижнем углу стола)
@@ -168,6 +215,9 @@ class PlannerTab(QWidget):
         left.addWidget(t)
         self.listw = QListWidget()
         self.listw.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.listw.setMouseTracking(True)   # подсветка кнопки «➕» при наведении
+        self.listw.setItemDelegate(PositionDelegate(self))   # кнопка «➕» в строке
+        self.listw.viewport().installEventFilter(self)       # клики по кнопке
         left.addWidget(self.listw, 1)
         btns = QHBoxLayout()
         add = QPushButton("Новая позиция"); add.clicked.connect(self._add_part)
@@ -294,8 +344,9 @@ class PlannerTab(QWidget):
                 f"{shape} {it.name}  {it.size_x_mm:g}×{it.size_y_mm:g} мм · "
                 f"{it.time_h:g} ч · {it.qty} шт.")
             item.setData(Qt.UserRole, it.id)
+            item.setData(BTN_ROLE, it.id)          # по этому id рисуем кнопку «➕»
+            item.setToolTip("Кнопка ➕ справа — добавить позицию на текущий стол")
             self.listw.addItem(item)
-            self._append_add_button(it)
         if sel_name is not None:
             for i in range(self.listw.count()):
                 if self.listw.item(i).data(Qt.UserRole) == sel_name:
@@ -304,12 +355,70 @@ class PlannerTab(QWidget):
         self._refresh_saved_list()
         self._on_printer_changed()
 
-    def _append_add_button(self, part: PartItem):
-        """К кастомному элементу списка прицепляем маленькую кнопку '➕'."""
-        pass  # реализовано через ItemWidget ниже
+    # ------------------------------------------------- клик по кнопке «➕» ------
+    def eventFilter(self, obj, event):
+        """Ловим клики/наведение по области кнопки в строках списка позиций."""
+        if obj is self.listw.viewport():
+            if event.type() == QEvent.MouseButtonRelease and \
+                    event.button() == Qt.LeftButton:
+                pid = self._button_part_id_at(event.pos())
+                if pid is not None:
+                    self._add_part_to_bed(pid)
+                    return True
+            elif event.type() in (QEvent.MouseMove, QEvent.HoverEnter):
+                pid = self._button_part_id_at(event.pos())
+                self.listw.viewport().setCursor(
+                    Qt.PointingHandCursor if pid is not None else Qt.ArrowCursor)
+        return super().eventFilter(obj, event)
+
+    def _button_part_id_at(self, pos):
+        item = self.listw.itemAt(pos)
+        if item is None:
+            return None
+        rect = QRectF(self.listw.visualItemRect(item))
+        if btn_rect_for(rect).contains(QPointF(pos)):
+            return item.data(BTN_ROLE)
+        return None
+
+    def _add_part_to_bed(self, part_id: int):
+        """Добавить одну штуку позиции на текущий стол (пересчёт раскладки)."""
+        p = next((x for x in self.parts if x.id == part_id), None)
+        if p is None:
+            return
+        pr = self._bed()
+        if not pr:
+            QMessageBox.warning(self, "Стол", "Выберите принтер (стол).")
+            return
+        reqs = [PackRequest(p.name, p.shape, p.size_x_mm, p.size_y_mm, 1)]
+        res = pack_bed(reqs, pr.bed_x_mm, pr.bed_y_mm, gap_mm=self._gap())
+        prev = self._last_pack
+        if prev is None:
+            self._last_pack = res
+        else:
+            from ..logic.scheduler import PackResult as _PR
+            merged = _PR()
+            merged.placed = list(prev.placed) + list(res.placed)
+            merged.unplaced = list(prev.unplaced) + list(res.unplaced)
+            merged.used_area_mm2 = sum(q.w_mm * q.h_mm for q in merged.placed)
+            self._last_pack = merged
+        if res.unplaced:
+            self.res.set_text(
+                f"«{p.name}» не помещается на этот стол целиком — "
+                f"деталь помечена как вне конфигурации.")
+        else:
+            placed_now = res.placed[0]
+            self.res.set_text(
+                f"Добавлено на стол: «{p.name}» "
+                f"(X={placed_now.x_mm:g}, Y={placed_now.y_mm:g} мм, "
+                f"всего на столе {len(self._last_pack.placed)} шт.)")
+        self.bed_view.set_state(pr.bed_x_mm, pr.bed_y_mm,
+                                self._last_pack.placed, self._gap(),
+                                self._last_pack.unplaced)
 
     def _current_part(self) -> PartItem | None:
-        item = self.listw.currentItem()
+        """Позиция под курсором мыши; если мышь вне списка — последняя выбранная."""
+        pos = self.listw.viewport().mapFromGlobal(self.listw.cursor().pos())
+        item = self.listw.itemAt(pos) or self.listw.currentItem()
         if not item:
             return None
         pid = item.data(Qt.UserRole)

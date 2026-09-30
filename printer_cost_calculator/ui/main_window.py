@@ -17,6 +17,7 @@ class MainWindow(QMainWindow):
         self.repo = repo
 
         tabs = QTabWidget()
+        tabs.setDocumentMode(True)   # без «каркаса» tabBar — вкладки не обрезаются по краям
         self.calc_tab = CalculatorTab(repo)
         tabs.addTab(self.calc_tab, "Калькулятор")
         self.planner_tab = PlannerTab(repo)

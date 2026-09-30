@@ -1,9 +1,12 @@
 """Вкладка «Калькулятор»: ввод данных после слайсинга и результат расчёта."""
 
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFontMetrics
 from PyQt5.QtWidgets import (
     QWidget, QComboBox, QLineEdit, QCheckBox, QLabel, QPushButton,
-    QFormLayout, QVBoxLayout, QHBoxLayout, QGroupBox, QTableWidget,
+    QGridLayout, QVBoxLayout, QHBoxLayout, QGroupBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QMessageBox, QAbstractItemView,
+    QScrollArea, QSizePolicy,
 )
 
 from ..db.models import Consumable
@@ -17,35 +20,31 @@ class CalculatorTab(QWidget):
         lay = QVBoxLayout(self)
 
         # ----------------------------- форма ввода -----------------------------
-        form = QFormLayout()
-
         self.c_printer = QComboBox()
-        form.addRow("Принтер:", self.c_printer)
 
-        self.e_mass = QLineEdit();  form.addRow("Масса изделия, г:", self.e_mass)
+        self.e_mass = QLineEdit()
 
         self.c_part_mat = QComboBox()
-        form.addRow("Материал изделия:", self.c_part_mat)
 
         self.cb_supports = QCheckBox("Есть поддержки")
-        form.addRow("", self.cb_supports)
-        self.e_sup_mass = QLineEdit(); form.addRow("Масса поддержек, г:", self.e_sup_mass)
-        self.c_sup_mat = QComboBox();  form.addRow("Материал поддержек:", self.c_sup_mat)
+        self.e_sup_mass = QLineEdit()
+        self.c_sup_mat = QComboBox()
         self.e_sup_mass.setEnabled(False); self.c_sup_mat.setEnabled(False)
         self.cb_supports.toggled.connect(lambda on: (
             self.e_sup_mass.setEnabled(on), self.c_sup_mat.setEnabled(on)))
 
-        self.e_time = QLineEdit();  form.addRow("Время печати, ч:", self.e_time)
+        self.e_time = QLineEdit()
         self.c_time_mode = QComboBox()
         self.c_time_mode.addItem("на 1 деталь", True)
         self.c_time_mode.addItem("на всю партию", False)
-        form.addRow("Время указано:", self.c_time_mode)
 
-        self.e_qty = QLineEdit("1"); form.addRow("Количество деталей:", self.e_qty)
+        self.e_qty = QLineEdit("1")
 
         # расходники: флажки по типам + выпадающий выбор конкретного клея/сопла
         box = QGroupBox("Расходные материалы")
         bl = QVBoxLayout(box)
+        bl.setContentsMargins(8, 4, 8, 6)
+        bl.setSpacing(3)
         self._consum_checks: dict[str, QCheckBox] = {}
         for kind in Consumable.KINDS:
             cb = QCheckBox(Consumable.KIND_LABELS[kind])
@@ -55,30 +54,59 @@ class CalculatorTab(QWidget):
         gl = QHBoxLayout(); gl.addWidget(QLabel("Клей:")); gl.addWidget(self.c_glue)
         gl.addWidget(QLabel("Сопло:")); gl.addWidget(self.c_nozzle)
         bl.addLayout(gl)
-        form.addRow(box)
 
         calc_btn = QPushButton("РАССЧИТАТЬ")
-        calc_btn.setObjectName("default")
         calc_btn.clicked.connect(self._on_calc)
 
         # ----------------------------- результат --------------------------------
-        # Ход расчёта занимает большую часть окна: помещаются ВСЕ строки сразу,
-        # листать формулы не нужно. Форма ввода — слева, прокручивается только она.
-        split = QHBoxLayout()
-
-        form_wrap = QVBoxLayout()
-        form_wrap.addLayout(form)
-        form_wrap.addWidget(calc_btn)
-        form_wrap.addStretch(1)
+        # Ход расчёта занимает всю ширину под формой и растягивается по высоте:
+        # помещаются ВСЕ строки сразу, листать формулы не нужно.
+        # Форма ввода — компактная сетка слева; при нехватке места прокручивается
+        # только она, поле результата всегда видно целиком.
         form_host = QWidget()
-        form_host.setLayout(form_wrap)
-        from PyQt5.QtWidgets import QScrollArea
+        grid = QGridLayout(form_host)
+        grid.setContentsMargins(4, 4, 12, 4)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(6)
+
+        def add_row_pair(row, col, label_text, widget):
+            lab = QLabel(label_text)
+            lab.setProperty("role", "muted")
+            grid.addWidget(lab, row, col * 2)
+            widget.setMinimumWidth(90)
+            grid.addWidget(widget, row, col * 2 + 1)
+
+        self._form_rows = []          # (метка, поле) для раскладки
+        r = 0
+        add_row_pair(r, 0, "Принтер:", self.c_printer); r += 1
+        add_row_pair(r, 0, "Масса изделия, г:", self.e_mass)
+        add_row_pair(r, 0, "Материал изделия:", self.c_part_mat); r += 1
+        grid.addWidget(self.cb_supports, r, 0, 1, 2); r += 1
+        add_row_pair(r, 0, "Масса поддержек, г:", self.e_sup_mass)
+        add_row_pair(r, 0, "Мат. поддержек:", self.c_sup_mat); r += 1
+        add_row_pair(r, 0, "Время печати, ч:", self.e_time)
+        add_row_pair(r, 0, "Время указано:", self.c_time_mode); r += 1
+        add_row_pair(r, 0, "Количество, шт.:", self.e_qty); r += 1
+
+        box.setTitle("Расходные материалы")
+        grid.addWidget(box, r, 0, 1, 4)
+        box.setMaximumHeight(175)
+        r += 1
+
+        calc_btn.setObjectName("default")
+        grid.addWidget(calc_btn, r, 0, 1, 4)
+        r += 1
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+        grid.setRowStretch(r, 1)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(form_host)
         scroll.setFrameShape(QScrollArea.NoFrame)
-        scroll.setMaximumWidth(430)
-        split.addWidget(scroll, 0)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        scroll.setMaximumHeight(430)   # выше — только если окно маленькое
+        lay.addWidget(scroll, 0)
 
         res_box = QVBoxLayout()
         head = QLabel("Ход расчёта:")
@@ -89,13 +117,14 @@ class CalculatorTab(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        self.table.setSizePolicy(self.table.sizePolicy().Expanding,
-                                 self.table.sizePolicy().Expanding)
-        self.table.setMinimumHeight(420)   # ~12+ строк без прокрутки
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.table.setMinimumHeight(380)
+        # Строки подгоняются под содержимое: длинные формулы видны целиком,
+        # горизонтальная прокрутка таблицы отключена.
+        self.table.horizontalScrollBar().setEnabled(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
         res_box.addWidget(self.table, 1)
-        split.addLayout(res_box, 1)
-
-        lay.addLayout(split, 1)
+        lay.addLayout(res_box, 1)
 
         tot = QHBoxLayout()
         self.l_per_part = QLabel("Цена за деталь: —")
@@ -202,8 +231,20 @@ class CalculatorTab(QWidget):
         self.table.setRowCount(len(res.steps))
         for r, s in enumerate(res.steps):
             self.table.setItem(r, 0, QTableWidgetItem(s.title))
-            self.table.setItem(r, 1, QTableWidgetItem(s.formula))
+            it = QTableWidgetItem(s.formula)
+            it.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            # перенос длинных формул по словам — текст виден целиком, без «...»
+            it.setFlags(it.flags() | Qt.ItemIsWrapText)
+            self.table.setItem(r, 1, it)
             self.table.setItem(r, 2, QTableWidgetItem(f"{s.value_rub:.2f}"))
+        # высота каждой строки = нужной для полного текста формулы (без «...»)
+        col_w = max(self.table.columnWidth(1), 300)
+        fm = QFontMetrics(self.table.font())
+        for r in range(self.table.rowCount()):
+            txt = self.table.item(r, 1).text() if self.table.item(r, 1) else ""
+            rect = fm.boundingRect(0, 0, col_w, 1000,
+                                   Qt.TextWordWrap | Qt.AlignLeft, txt)
+            self.table.setRowHeight(r, max(28, rect.height() + 10))
         self.l_per_part.setText(f"Цена за деталь: {res.per_part_total:.2f} ₽")
         self.l_batch.setText(f"Цена за партию ({inp.quantity} шт.): "
                              f"{res.batch_total:.2f} ₽")

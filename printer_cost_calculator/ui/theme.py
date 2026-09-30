@@ -49,6 +49,14 @@ QTabWidget::pane {{
     background-color: {BG};
     top: -1px;
 }}
+/* documentMode снимает «каркас» вокруг tabBar — вкладки больше не обрезаются
+   по краям (первая и последняя целиком видны); рамку держит ::pane ниже. */
+QTabWidget::tab-bar {{
+    left: 4px;
+}}
+QTabBar {{
+    qdocument-mode: true;
+}}
 QTabBar::tab {{
     background-color: {SURFACE};
     color: {GOLD_SOFT};
