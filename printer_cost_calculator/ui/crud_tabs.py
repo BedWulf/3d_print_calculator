@@ -1,12 +1,22 @@
-"""Вкладки-редакторы баз данных: Принтеры, Материалы, Расходные материалы, Настройки."""
+"""Вкладки-редакторы баз данных: Принтеры, Материалы, Расходные материалы, Настройки.
+
+Все справочники полностью редактируются пользователем: добавление, изменение,
+удаление записей. Стартовые данные вносятся только при первом запуске.
+"""
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QWidget, QFormLayout, QLabel, QLineEdit, QComboBox, QPushButton,
-    QVBoxLayout, QHBoxLayout, QMessageBox, QListWidget,
+    QVBoxLayout, QHBoxLayout, QMessageBox, QListWidget, QGroupBox,
 )
 
 from ..db.models import Printer, Material, Consumable, Settings
+
+
+def _title(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setProperty("role", "accent")
+    return lbl
 
 
 class PrintersTab(QWidget):
@@ -20,7 +30,7 @@ class PrintersTab(QWidget):
         self.listw = _ListWidget(repo.list_printers, lambda o: o.name, self)
         self.listw.currentTextChanged.connect(self._load_row)
         left = QVBoxLayout()
-        left.addWidget(QLabel("<b>Принтеры</b>"))
+        left.addWidget(_title("Принтеры"))
         left.addWidget(self.listw)
         btns = QHBoxLayout()
         for text, slot in (("Добавить", self._add), ("Удалить", self._delete)):
@@ -28,14 +38,21 @@ class PrintersTab(QWidget):
         left.addLayout(btns)
         lay.addLayout(left, 1)
 
-        form = QFormLayout()
+        box = QGroupBox("Параметры выбранного принтера")
+        form = QFormLayout(box)
         self.e_name = QLineEdit();      form.addRow("Название:", self.e_name)
         self.e_kwh = QLineEdit();       form.addRow("Потребление, кВт·ч/час:", self.e_kwh)
         self.e_dep = QLineEdit();       form.addRow("Амортизация, ₽/час:", self.e_dep)
         self.e_note = QLineEdit();      form.addRow("Примечание:", self.e_note)
-        save = QPushButton("Сохранить"); save.clicked.connect(self._save)
+        save = QPushButton("Сохранить"); save.setObjectName("default")
+        save.clicked.connect(self._save)
         form.addRow(save)
-        lay.addLayout(form, 2)
+        hint = QLabel("Подсказка: амортизация = цена принтера ÷ ресурс наработки в часах.\n"
+                      "Например: 36 000 ₽ ÷ 12 000 ч = 3 ₽/ч.")
+        hint.setProperty("role", "muted")
+        hint.setWordWrap(True)
+        form.addRow(hint)
+        lay.addWidget(box, 2)
 
     # ---------------------------------------------------------------- helpers
     def _current(self):
@@ -57,8 +74,9 @@ class PrintersTab(QWidget):
 
     def _delete(self):
         p = self._current()
-        if p and QMessageBox.question(self, "Удалить", f"Удалить «{p.name}»?") \
-                == QMessageBox.Yes:
+        if p and QMessageBox.question(self, "Удалить", f"Удалить «{p.name}»?\n"
+                "Это действие нельзя отменить.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
             self.repo.delete_printer(p.id)
             self.listw.reload()
 
@@ -86,7 +104,7 @@ class MaterialsTab(QWidget):
                                  self)
         self.listw.currentTextChanged.connect(self._load_row)
         left = QVBoxLayout()
-        left.addWidget(QLabel("<b>Материалы</b>"))
+        left.addWidget(_title("Материалы"))
         left.addWidget(self.listw)
         btns = QHBoxLayout()
         for text, slot in (("Добавить", self._add), ("Удалить", self._delete)):
@@ -94,7 +112,8 @@ class MaterialsTab(QWidget):
         left.addLayout(btns)
         lay.addLayout(left, 1)
 
-        form = QFormLayout()
+        box = QGroupBox("Параметры выбранного материала")
+        form = QFormLayout(box)
         self.e_name = QLineEdit();   form.addRow("Название:", self.e_name)
         self.e_dens = QLineEdit();   form.addRow("Плотность, г/см³:", self.e_dens)
         self.c_spool = QComboBox()
@@ -102,11 +121,17 @@ class MaterialsTab(QWidget):
             self.c_spool.addItem(f"{w} кг", w)
         form.addRow("Катушка:", self.c_spool)
         self.e_price = QLineEdit();  form.addRow("Цена за катушку, ₽:", self.e_price)
-        self.l_ppg = QLabel("—");     form.addRow("Цена за грамм (расч.):", self.l_ppg)
+        self.l_ppg = QLabel("—")
+        self.l_ppg.setProperty("role", "accent")
+        form.addRow("Цена за грамм (расчётная):", self.l_ppg)
         self.e_note = QLineEdit();   form.addRow("Примечание:", self.e_note)
-        save = QPushButton("Сохранить"); save.clicked.connect(self._save)
+        save = QPushButton("Сохранить"); save.setObjectName("default")
+        save.clicked.connect(self._save)
         form.addRow(save)
-        lay.addLayout(form, 2)
+        lay.addWidget(box, 2)
+
+        self.e_price.textChanged.connect(self._update_ppg)
+        self.c_spool.currentIndexChanged.connect(self._update_ppg)
 
     def _current(self):
         return self.listw.current_item()
@@ -139,8 +164,9 @@ class MaterialsTab(QWidget):
 
     def _delete(self):
         m = self._current()
-        if m and QMessageBox.question(self, "Удалить", f"Удалить «{m.name}»?") \
-                == QMessageBox.Yes:
+        if m and QMessageBox.question(self, "Удалить", f"Удалить «{m.name}»?\n"
+                "Это действие нельзя отменить.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
             self.repo.delete_material(m.id)
             self.listw.reload()
 
@@ -169,7 +195,7 @@ class ConsumablesTab(QWidget):
                                  self)
         self.listw.currentTextChanged.connect(self._load_row)
         left = QVBoxLayout()
-        left.addWidget(QLabel("<b>Расходные материалы</b>"))
+        left.addWidget(_title("Расходные материалы"))
         left.addWidget(self.listw)
         btns = QHBoxLayout()
         for text, slot in (("Добавить", self._add), ("Удалить", self._delete)):
@@ -177,7 +203,8 @@ class ConsumablesTab(QWidget):
         left.addLayout(btns)
         lay.addLayout(left, 1)
 
-        form = QFormLayout()
+        box = QGroupBox("Параметры выбранного расходника")
+        form = QFormLayout(box)
         self.c_kind = QComboBox()
         for k in Consumable.KINDS:
             self.c_kind.addItem(Consumable.KIND_LABELS[k], k)
@@ -188,13 +215,15 @@ class ConsumablesTab(QWidget):
         form.addRow("Расход на деталь (доля единицы):", self.e_cons)
         self.e_price = QLineEdit();  form.addRow("Цена за ед., ₽:", self.e_price)
         self.e_note = QLineEdit();   form.addRow("Примечание:", self.e_note)
-        save = QPushButton("Сохранить"); save.clicked.connect(self._save)
+        save = QPushButton("Сохранить"); save.setObjectName("default")
+        save.clicked.connect(self._save)
         form.addRow(save)
         hint = QLabel("Пример: сопло служит 200 ч → расход на деталь 6 ч = 0.03 ресурса; "
                       "цена — за целое сопло.")
+        hint.setProperty("role", "muted")
         hint.setWordWrap(True)
         form.addRow(hint)
-        lay.addLayout(form, 2)
+        lay.addWidget(box, 2)
 
     def _current(self):
         return self.listw.current_item()
@@ -219,8 +248,9 @@ class ConsumablesTab(QWidget):
 
     def _delete(self):
         c = self._current()
-        if c and QMessageBox.question(self, "Удалить", f"Удалить «{c.name}»?") \
-                == QMessageBox.Yes:
+        if c and QMessageBox.question(self, "Удалить", f"Удалить «{c.name}»?\n"
+                "Это действие нельзя отменить.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
             self.repo.delete_consumable(c.id)
             self.listw.reload()
 
@@ -244,7 +274,8 @@ class SettingsTab(QWidget):
         super().__init__(parent)
         self.repo = repo
         lay = QVBoxLayout(self)
-        form = QFormLayout()
+        box = QGroupBox("Общие параметры расчёта")
+        form = QFormLayout(box)
         s = repo.get_settings()
         self.e_elec = QLineEdit(str(s.electricity_price_rub_per_kwh))
         form.addRow("Тариф электроэнергии, ₽/кВт·ч:", self.e_elec)
@@ -253,9 +284,10 @@ class SettingsTab(QWidget):
         self.e_markup = QLineEdit(str(s.markup_percent))
         form.addRow("Наценка, % (резерв):", self.e_markup)
         save = QPushButton("Сохранить настройки")
+        save.setObjectName("default")
         save.clicked.connect(self._save)
         form.addRow(save)
-        lay.addLayout(form)
+        lay.addWidget(box)
         lay.addStretch(1)
 
     def _save(self):

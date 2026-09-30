@@ -60,23 +60,32 @@ class CalculatorTab(QWidget):
         lay.addLayout(form)
 
         calc_btn = QPushButton("РАССЧИТАТЬ")
+        calc_btn.setObjectName("default")
         calc_btn.clicked.connect(self._on_calc)
         lay.addWidget(calc_btn)
 
         # ----------------------------- результат --------------------------------
-        lay.addWidget(QLabel("<b>Ход расчёта:</b>"))
+        head = QLabel("Ход расчёта:")
+        head.setProperty("role", "accent")
+        lay.addWidget(head)
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Статья", "Формула", "Сумма, ₽"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
         lay.addWidget(self.table)
 
         tot = QHBoxLayout()
         self.l_per_part = QLabel("Цена за деталь: —")
         self.l_batch = QLabel("Цена за партию: —")
-        f = self.l_per_part.font(); f.setPointSize(f.pointSize() + 3); f.setBold(True)
-        self.l_per_part.setFont(f); self.l_batch.setFont(f)
-        tot.addWidget(self.l_per_part); tot.addWidget(self.l_batch)
+        for lbl in (self.l_per_part, self.l_batch):
+            f = lbl.font()
+            f.setPointSize(f.pointSize() + 3)
+            f.setBold(True)
+            lbl.setFont(f)
+            lbl.setProperty("role", "accent")   # золото из темы
+        tot.addWidget(self.l_per_part)
+        tot.addWidget(self.l_batch)
         lay.addLayout(tot)
 
         self.reload_sources()

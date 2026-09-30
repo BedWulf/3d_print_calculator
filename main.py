@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import QApplication
 
 from printer_cost_calculator.db.repository import Repository
 from printer_cost_calculator.ui.main_window import MainWindow
+from printer_cost_calculator.ui.theme import apply_theme
 
 
 def data_dir() -> Path:
@@ -29,6 +30,7 @@ def data_dir() -> Path:
 
 def main():
     app = QApplication(sys.argv)
+    apply_theme(app)
     repo = Repository(data_dir() / "calculator.db")
     win = MainWindow(repo)
     win.show()

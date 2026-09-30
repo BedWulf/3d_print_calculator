@@ -1,16 +1,1 @@
-# Compiled files
-__pycache__/
-*.pyc
-
-# Build artifacts
-build/node_modules/
-.next/
-dist/
-build/
-*.log
-node_modules/
-*.db
-.venv/
-venv/
-*.spec
-price3dcalc.bundle
+(empty)
